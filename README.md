@@ -2,7 +2,7 @@
 
 Smallprox is small HTTP proxy with features such as HTTPS MITM and content manipulation, written in Go.
 
-## usage
+## Usage
 ```
 Usage of smallprox:
   -addr value
@@ -31,4 +31,11 @@ Usage of smallprox:
     	Make images/pictures smaller *
   -v	Verbose output
 * only applies to CONNECT if MITM enabled
+```
+
+## Docker
+```
+docker build --tag millerlogic/smallprox .
+
+docker run --rm -it -p 127.0.0.1:8080:8080 --user=nobody:nobody --init millerlogic/smallprox
 ```
