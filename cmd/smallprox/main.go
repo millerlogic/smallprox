@@ -8,6 +8,7 @@ package main
 
 import (
 	"crypto/tls"
+	"encoding/pem"
 	"flag"
 	"io/ioutil"
 	"log"
@@ -17,6 +18,7 @@ import (
 
 	humanize "github.com/dustin/go-humanize"
 	"github.com/millerlogic/smallprox"
+	"github.com/youmark/pkcs8"
 	"golang.org/x/exp/errors"
 	"golang.org/x/exp/errors/fmt"
 )
@@ -84,11 +86,26 @@ func run() error {
 		if err != nil {
 			return fmt.Errorf("-cakey error: %w", err)
 		}
-		proxyCa, err := tls.X509KeyPair(caCert, caKey)
-		if err != nil {
-			return fmt.Errorf("CA error: %w", err)
+		if caKeyPw, hasPw := os.LookupEnv("SMALLPROX_CAKEY_PW"); hasPw {
+			os.Unsetenv("SMALLPROX_CAKEY_PW")
+			block, _ := pem.Decode(caKey)
+			privkey, err := pkcs8.ParsePKCS8PrivateKeyRSA(block.Bytes, []byte(caKeyPw))
+			if err != nil {
+				return fmt.Errorf("Problem decrypting -cakey file: %w", err)
+			}
+			certblock, _ := pem.Decode(caCert)
+			proxyCa := tls.Certificate{
+				Certificate: [][]byte{certblock.Bytes},
+				PrivateKey:  privkey,
+			}
+			opts.CA = proxyCa
+		} else {
+			proxyCa, err := tls.X509KeyPair(caCert, caKey)
+			if err != nil {
+				return fmt.Errorf("CA error: %w", err)
+			}
+			opts.CA = proxyCa
 		}
-		opts.CA = proxyCa
 	}
 
 	proxy := smallprox.NewProxy(opts)
