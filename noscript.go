@@ -7,12 +7,15 @@
 package smallprox
 
 import (
+	"bytes"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"regexp"
 	"strings"
 
 	"github.com/tdewolff/parse/html"
+	"golang.org/x/exp/errors/fmt"
 )
 
 type NoscriptResponder struct {
@@ -36,6 +39,23 @@ func (er *NoscriptResponder) Response(req *http.Request, resp *http.Response) *h
 		noscriptStreamer(resp.Body, outbuf)
 		resp.Body.Close()
 		resp.Body = outbuf
+	} else {
+		simpleMIME := respMIMEType
+		if iplus := strings.IndexByte(simpleMIME, '+'); iplus != -1 {
+			simpleMIME = simpleMIME[:iplus]
+		}
+		switch simpleMIME {
+		case "application/javascript",
+			"application/x-javascript",
+			"text/javascript",
+			"application/ecmascript",
+			"text/ecmascript":
+			resp.Body.Close()
+			resp.Body = ioutil.NopCloser(bytes.NewBufferString("// noscript\n"))
+			resp.Header.Set("Content-Type", "text/plain")
+			resp.StatusCode = 521
+			resp.Status = fmt.Sprintf("%v %v", resp.StatusCode, "Down")
+		}
 	}
 	return resp
 }
