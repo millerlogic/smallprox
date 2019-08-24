@@ -58,8 +58,8 @@ func (er *CompressResponder) Response(req *http.Request, resp *http.Response) *h
 				enc = "deflate"
 			}
 			io.Copy(dest, resp.Body)
-			resp.Body.Close()
 			dest.Close() // Finish the compression.
+			resp.Body.Close()
 			resp.Body = outbuf
 			resp.Header.Set("Content-Encoding", enc)
 			// TODO: Content-Length ....

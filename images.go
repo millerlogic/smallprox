@@ -42,6 +42,7 @@ func (er *ImageShrinkResponder) Response(req *http.Request, resp *http.Response)
 		// TODO: use specific decoder per the content type...
 		//img, _, err := image.Decode(r)
 		img, err := imaging.Decode(resp.Body, imaging.AutoOrientation(true))
+		resp.Body.Close()
 		if err != nil {
 			log.Printf("Error loading image as %s: %s", respContentType, err)
 			resp.Body = ioutil.NopCloser(bytes.NewBuffer(badImg))
@@ -49,7 +50,6 @@ func (er *ImageShrinkResponder) Response(req *http.Request, resp *http.Response)
 			resp.StatusCode = http.StatusInternalServerError
 			resp.Status = fmt.Sprintf("%v %v", resp.StatusCode, http.StatusText(resp.StatusCode))
 		} else {
-			resp.Body.Close()
 			const maxImgDim = 1024
 			w := img.Bounds().Dx()
 			h := img.Bounds().Dy()
