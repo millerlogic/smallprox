@@ -7,6 +7,7 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/pem"
 	"flag"
@@ -24,6 +25,8 @@ import (
 )
 
 func run() error {
+	ctx := context.Background()
+
 	limiter := &smallprox.LimitBytesResponder{}
 	limiter.SetLimit(1024 * 1024 * 100)
 	flimiter := &limiterFlag{limiter: limiter}
@@ -128,7 +131,7 @@ func run() error {
 	proxy.AddResponder(noscript)
 	proxy.AddResponder(compressor)
 
-	return proxy.ListenAndServe()
+	return proxy.ListenAndServeContext(ctx)
 }
 
 func main() {

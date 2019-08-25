@@ -52,7 +52,9 @@ func (er *NoscriptResponder) Response(req *http.Request, resp *http.Response) *h
 			"text/ecmascript":
 			resp.Body.Close()
 			resp.Body = ioutil.NopCloser(bytes.NewBufferString("// noscript\n"))
-			resp.Header.Set("Content-Type", "text/plain")
+			for x := range resp.Header {
+				delete(resp.Header, x)
+			}
 			resp.StatusCode = 521
 			resp.Status = fmt.Sprintf("%v %v", resp.StatusCode, "Down")
 		}
