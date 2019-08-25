@@ -17,6 +17,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/elazarl/goproxy"
@@ -71,7 +72,15 @@ type Proxy struct {
 	cancel        func()
 	requesters    []Requester // Do not remove from this array, see getRequesters
 	responders    []Responder // Do not remove from this array, see getResponders
+	err           error
+	state         int32 // atomic, see state*
 }
+
+const (
+	stateNew = iota
+	stateRun
+	stateStop
+)
 
 // NewProxy creates a new proxy.
 func NewProxy(opts Options) *Proxy {
@@ -231,11 +240,11 @@ func (proxy *Proxy) ListenAndServeContext(ctx context.Context) error {
 	finalErr := func() error {
 		proxy.mx.Lock()
 		defer proxy.mx.Unlock()
-		if proxy.httpservers != nil {
-			return errors.New("Already listening")
-		}
 		if len(proxy.opts.Addresses) == 0 {
 			return errors.New("No addresses")
+		}
+		if !atomic.CompareAndSwapInt32(&proxy.state, stateNew, stateRun) {
+			return errors.New("Already running")
 		}
 		for _, addr := range proxy.opts.Addresses {
 			proxy.httpservers = append(proxy.httpservers, &http.Server{Addr: addr, Handler: proxy})
@@ -243,35 +252,80 @@ func (proxy *Proxy) ListenAndServeContext(ctx context.Context) error {
 		proxy.cancel = cancel
 		proxy.ctx = ctx
 		for _, httpserver := range proxy.httpservers {
+			httpserver := httpserver
 			eg.Go(func() error {
 				return httpserver.ListenAndServe()
 			})
 		}
 		return nil
 	}()
+
+	finished := make(chan struct{})
+	really := make(chan struct{})
+	go func() {
+		defer close(really)
+		select {
+		case <-ctx.Done():
+		case <-finished:
+			return
+		}
+		// ctx is done, so ensure all the http servers are closed..
+		proxy.stop(nil) // error captured in proxy.err
+	}()
 	if finalErr != nil {
 		return finalErr
 	}
-	return eg.Wait()
+
+	err := eg.Wait()
+	close(finished)
+	<-really
+	if err != nil {
+		return err
+	}
+	proxy.mx.RLock()
+	err = proxy.err
+	proxy.mx.RUnlock()
+	return err
 }
 
 func (proxy *Proxy) ListenAndServe() error {
 	return proxy.ListenAndServeContext(context.Background())
 }
 
-func (proxy *Proxy) Shutdown(ctx context.Context) error {
+func (proxy *Proxy) stop(shutdownCtx context.Context) error {
+	if !atomic.CompareAndSwapInt32(&proxy.state, stateRun, stateStop) {
+		return nil
+	}
 	proxy.cancel()
 	eg := &errgroup.Group{}
 	func() {
 		proxy.mx.Lock()
 		defer proxy.mx.Unlock()
 		for _, httpserver := range proxy.httpservers {
+			httpserver := httpserver
 			eg.Go(func() error {
-				return httpserver.Shutdown(ctx)
+				if shutdownCtx != nil {
+					return httpserver.Shutdown(shutdownCtx)
+				}
+				return httpserver.Close()
 			})
 		}
 	}()
-	return eg.Wait()
+	err := eg.Wait()
+	if err != nil {
+		proxy.mx.Lock()
+		proxy.err = err
+		proxy.mx.Unlock()
+	}
+	return err
+}
+
+func (proxy *Proxy) Close() error {
+	return proxy.stop(nil)
+}
+
+func (proxy *Proxy) Shutdown(ctx context.Context) error {
+	return proxy.stop(ctx)
 }
 
 func (proxy *Proxy) getAuth() string {
