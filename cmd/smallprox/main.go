@@ -40,6 +40,9 @@ func run() error {
 	compressor.SetEnabled(true)
 	fcompressor := &toggleFlag{toggle: compressor}
 
+	tfilter := &smallprox.TypeFilterResponder{}
+	tfilter.SetEnabled(true)
+
 	opts := smallprox.Options{
 		ConnectMITM: true,
 	}
@@ -59,6 +62,10 @@ func run() error {
 	fs.Var(flimiter, "limitContent", "Limit content to minimize excessive memory usage *")
 	fs.Var(fimageShrinker, "shrinkImages", "Make images/pictures smaller *")
 	fs.StringVar(&opts.Auth, "auth", opts.Auth, "Proxy authentication, username:password")
+	var blockFonts bool
+	fs.BoolVar(&blockFonts, "blockFonts", blockFonts, "Block font files *")
+	var blockTypes []string
+	fs.Var((*arrayFlags)(&blockTypes), "blockType", "Block file types (MIME type or extension without dot) *")
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), "Usage of %s:\n", os.Args[0])
 		flag.PrintDefaults()
@@ -108,9 +115,15 @@ func run() error {
 		}
 	}
 
+	if blockFonts {
+		tfilter.Block(smallprox.TypeFilterFonts...)
+	}
+	tfilter.Block(blockTypes...)
+
 	proxy := smallprox.NewProxy(opts)
 
 	proxy.AddResponder(limiter) // First.
+	proxy.AddResponder(tfilter)
 	proxy.AddResponder(imageShrinker)
 	proxy.AddResponder(noscript)
 	proxy.AddResponder(compressor)
