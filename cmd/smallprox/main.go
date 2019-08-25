@@ -15,6 +15,7 @@ import (
 	"log"
 	"math"
 	"os"
+	"os/signal"
 	"strings"
 
 	humanize "github.com/dustin/go-humanize"
@@ -131,7 +132,25 @@ func run() error {
 	proxy.AddResponder(noscript)
 	proxy.AddResponder(compressor)
 
-	return proxy.ListenAndServeContext(ctx)
+	finished := make(chan struct{})
+	sigchan := make(chan os.Signal, 1)
+	signal.Notify(sigchan, os.Interrupt)
+	go func() {
+		select {
+		case <-finished:
+			return
+		case sig := <-sigchan:
+			log.Print(sig)
+			err := proxy.Shutdown(context.Background())
+			if err != nil {
+				log.Print(err)
+			}
+		}
+	}()
+
+	err := proxy.ListenAndServeContext(ctx)
+	close(finished)
+	return err
 }
 
 func main() {
