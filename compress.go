@@ -42,28 +42,47 @@ func (er *CompressResponder) Response(req *http.Request, resp *http.Response) *h
 			respMIMEType == "application/json" ||
 			strings.HasSuffix(respMIMEType, "+xml") ||
 			strings.HasSuffix(respMIMEType, "+json") {
-			outbuf := &Mutable{}
-			var dest io.WriteCloser
-			var enc string
-			if canBrotli {
+			if compressCheck(resp) {
+				outbuf := &Mutable{}
+				var dest io.WriteCloser
+				var enc string
+				if canBrotli {
 					dest = brotli.NewWriterLevel(outbuf, brotli.DefaultCompression)
-				enc = "br"
-			} else if canGzip {
-				// https://blog.klauspost.com/go-gzipdeflate-benchmarks/
-				dest, _ = gzip.NewWriterLevel(outbuf, 5)
-				enc = "gzip"
-			} else if canDeflate {
-				// https://blog.klauspost.com/go-gzipdeflate-benchmarks/
-				dest, _ = flate.NewWriter(outbuf, 5)
-				enc = "deflate"
+					enc = "br"
+				} else if canGzip {
+					// https://blog.klauspost.com/go-gzipdeflate-benchmarks/
+					dest, _ = gzip.NewWriterLevel(outbuf, 5)
+					enc = "gzip"
+				} else if canDeflate {
+					// https://blog.klauspost.com/go-gzipdeflate-benchmarks/
+					dest, _ = flate.NewWriter(outbuf, 5)
+					enc = "deflate"
+				}
+				io.Copy(dest, resp.Body)
+				dest.Close() // Finish the compression.
+				resp.Body.Close()
+				resp.Body = outbuf
+				resp.Header.Set("Content-Encoding", enc)
+				// TODO: Content-Length ....
 			}
-			io.Copy(dest, resp.Body)
-			dest.Close() // Finish the compression.
-			resp.Body.Close()
-			resp.Body = outbuf
-			resp.Header.Set("Content-Encoding", enc)
-			// TODO: Content-Length ....
 		}
 	}
 	return resp
+}
+
+func compressCheck(resp *http.Response) bool {
+	var pr peekCloser
+	if x, ok := resp.Body.(peekCloser); ok {
+		pr = x
+	} else {
+		pr = newPeekCloser(resp.Body)
+		resp.Body = pr
+	}
+	const largeEnough = 256
+	peekbuf, _ := pr.Peek(largeEnough)
+	if len(peekbuf) < largeEnough {
+		// Don't bother compressing smaller files.
+		return false
+	}
+	return true
 }

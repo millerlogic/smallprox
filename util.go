@@ -7,6 +7,7 @@
 package smallprox
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/base64"
 	"io"
@@ -35,6 +36,14 @@ type Mutable struct {
 func (m *Mutable) Close() error {
 	m.Buffer.Reset()
 	return nil
+}
+
+func (m *Mutable) Peek(n int) ([]byte, error) {
+	b := m.Bytes()
+	if n <= len(b) {
+		return b[:n], nil
+	}
+	return b, io.EOF
 }
 
 func HasAnyFold(all []string, s string) bool {
@@ -96,4 +105,25 @@ func (t *toggle) SetEnabled(enabled bool) {
 	} else {
 		atomic.StoreInt32(&t._false, 1)
 	}
+}
+
+type peeker interface {
+	io.Reader
+	Peek(n int) ([]byte, error)
+}
+
+type peekCloser interface {
+	peeker
+	io.Closer
+}
+
+// If it's already a peek closer, it's returned.
+func newPeekCloser(r io.ReadCloser) peekCloser {
+	if pc, ok := r.(peekCloser); ok {
+		return pc
+	}
+	return struct {
+		*bufio.Reader
+		io.Closer
+	}{bufio.NewReader(r), r}
 }
