@@ -46,7 +46,7 @@ func (er *CompressResponder) Response(req *http.Request, resp *http.Response) *h
 			var dest io.WriteCloser
 			var enc string
 			if canBrotli {
-				dest = brotli.NewWriterLevel(outbuf, brotli.BestCompression)
+					dest = brotli.NewWriterLevel(outbuf, brotli.DefaultCompression)
 				enc = "br"
 			} else if canGzip {
 				// https://blog.klauspost.com/go-gzipdeflate-benchmarks/
